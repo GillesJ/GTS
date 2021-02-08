@@ -4,16 +4,17 @@ import torch
 import numpy as np
 
 sentiment2id = {'negative': 3, 'neutral': 4, 'positive': 5}
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertTokenizerFast
 
 
-def get_spans(tags):
+def get_spans(tags, max_length=None):
     '''for BIO tag'''
     tags = tags.strip().split()
-    length = len(tags)
+    if not max_length:
+        max_length = len(tags)
     spans = []
     start = -1
-    for i in range(length):
+    for i in range(max_length):
         if tags[i].endswith('B'):
             if start != -1:
                 spans.append([start, i - 1])
@@ -23,7 +24,7 @@ def get_spans(tags):
                 spans.append([start, i - 1])
                 start = -1
     if start != -1:
-        spans.append([start, length - 1])
+        spans.append([start, max_length - 1])
     return spans
 
 
@@ -52,27 +53,41 @@ class Instance(object):
     def __init__(self, tokenizer, sentence_pack, args):
         self.id = sentence_pack['id']
         self.sentence = sentence_pack['sentence']
-        self.tokens = self.sentence.strip().split()
-        self.sen_length = len(self.tokens)
+        self.tokens_untrunc = self.sentence.strip().split()
         self.token_range = []
-        self.bert_tokens = tokenizer.encode(self.sentence)
+        self.bert_tokens_untrunc = tokenizer.encode(self.sentence) # this shouldnt be used
+        self.bert_tokens_batchencoding = tokenizer.encode_plus(
+            self.tokens_untrunc,
+            is_split_into_words=True, # this is n
+            max_length=args.max_sequence_len,
+            truncation=True
+        )
+        self.bert_tokens = self.bert_tokens_batchencoding.input_ids
+        self.sen_length_untrunc = len(self.tokens_untrunc)
         self.length = len(self.bert_tokens)
+        # retrieve the truncated sequence of tokens from BatchEncoder (there's no built-in function)
+        self.tokens = []
+        tokenid_to_wordindex = set(self.bert_tokens_batchencoding.token_to_word(i) for i in range(self.length) if self.bert_tokens_batchencoding.token_to_word(i) is not None)
+        for i in tokenid_to_wordindex:
+            self.tokens.append(self.tokens_untrunc[i])
+        self.sen_length = len(self.tokens)
         self.bert_tokens_padding = torch.zeros(args.max_sequence_len).long()
         self.aspect_tags = torch.zeros(args.max_sequence_len).long()
         self.opinion_tags = torch.zeros(args.max_sequence_len).long()
         self.tags = torch.zeros(args.max_sequence_len, args.max_sequence_len).long()
         self.mask = torch.zeros(args.max_sequence_len)
 
+        # warn user about truncation
+        if len(self.tokens) < len(self.tokens_untrunc):
+            print(f"Sentence {self.id} truncated due to max_sequence_len {args.max_sequence_len}.")
+
         for i in range(self.length):
             self.bert_tokens_padding[i] = self.bert_tokens[i]
         self.mask[:self.length] = 1
 
-        token_start = 1
-        for i, w, in enumerate(self.tokens):
-            token_end = token_start + len(tokenizer.encode(w, add_special_tokens=False))
-            self.token_range.append([token_start, token_end-1])
-            token_start = token_end
-        assert self.length == self.token_range[-1][-1]+2
+        token_range_objs = [self.bert_tokens_batchencoding.word_to_tokens(i) for i in range(self.sen_length)]
+        self.token_range = [[tspan.start, tspan.end-1] for tspan in token_range_objs]
+        assert self.length == self.token_range[-1][-1]+2 # +2 because of start-CLS token and end-SEP token
 
         self.aspect_tags[self.length:] = -1
         self.aspect_tags[0] = -1
@@ -90,8 +105,8 @@ class Instance(object):
         for triple in sentence_pack['triples']:
             aspect = triple['target_tags']
             opinion = triple['opinion_tags']
-            aspect_span = get_spans(aspect)
-            opinion_span = get_spans(opinion)
+            aspect_span = get_spans(aspect, max_length=self.sen_length)
+            opinion_span = get_spans(opinion, max_length=self.sen_length)
 
             '''set tag for aspect'''
             for l, r in aspect_span:
@@ -145,7 +160,7 @@ class Instance(object):
 
 def load_data_instances(sentence_packs, args):
     instances = list()
-    tokenizer = BertTokenizer.from_pretrained(args.bert_tokenizer_path)
+    tokenizer = BertTokenizerFast.from_pretrained(args.bert_tokenizer)
     for sentence_pack in sentence_packs:
         instances.append(Instance(tokenizer, sentence_pack, args))
     return instances

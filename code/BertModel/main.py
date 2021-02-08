@@ -5,13 +5,13 @@ import random
 import argparse
 
 import torch
+
 import torch.nn.functional as F
 from tqdm import trange
 
 from data import load_data_instances, DataIterator
 from model import MultiInferBert
 import utils
-
 
 def train(args):
 
@@ -30,9 +30,9 @@ def train(args):
     model = MultiInferBert(args).to(args.device)
 
     optimizer = torch.optim.Adam([
-        {'params': model.bert.parameters(), 'lr': 5e-5},
+        {'params': model.bert.parameters(), 'lr': args.learning_rate},
         {'params': model.cls_linear.parameters()}
-    ], lr=5e-5)
+    ], lr=args.learning_rate)
 
     best_joint_f1 = 0
     best_joint_epoch = 0
@@ -121,18 +121,17 @@ if __name__ == '__main__':
                         help='option: pair, triplet')
     parser.add_argument('--mode', type=str, default="train", choices=["train", "test"],
                         help='option: train, test')
-    parser.add_argument('--dataset', type=str, default="res14", choices=["res14", "lap14", "res15", "res16"],
+    parser.add_argument('--dataset', type=str, default="res14", choices=["res14", "lap14", "res15", "res16", "sentivent-devproto", "sentivent-devproto-no-empty"],
                         help='dataset')
     parser.add_argument('--max_sequence_len', type=int, default=100,
                         help='max length of a sentence')
     parser.add_argument('--device', type=str, default="cuda",
                         help='gpu or cpu')
-
     parser.add_argument('--bert_model_path', type=str,
                         default="pretrained/bert-base-uncased",
                         help='pretrained bert model path')
-    parser.add_argument('--bert_tokenizer_path', type=str,
-                        default="pretrained/bert-base-uncased/bert-base-uncased-vocab.txt",
+    parser.add_argument('--bert_tokenizer', type=str,
+                        default="bert-base-uncased",
                         help='pretrained bert tokenizer path')
     parser.add_argument('--bert_feature_dim', type=int, default=768,
                         help='dimension of pretrained bert feature')
@@ -140,7 +139,9 @@ if __name__ == '__main__':
     parser.add_argument('--nhops', type=int, default=1,
                         help='inference times')
     parser.add_argument('--batch_size', type=int, default=32,
-                        help='bathc size')
+                        help='batch size')
+    parser.add_argument('--learning_rate', type=float, default=5e-5,
+                        help='Learning rate.')
     parser.add_argument('--epochs', type=int, default=100,
                         help='training epoch number')
     parser.add_argument('--class_num', type=int, default=4,

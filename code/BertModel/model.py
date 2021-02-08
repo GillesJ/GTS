@@ -10,7 +10,7 @@ class MultiInferBert(torch.nn.Module):
 
         self.args = args
         self.bert = BertModel.from_pretrained(args.bert_model_path)
-        self.tokenizer = BertTokenizer.from_pretrained(args.bert_tokenizer_path)
+        self.tokenizer = BertTokenizer.from_pretrained(args.bert_tokenizer)
 
         self.cls_linear = torch.nn.Linear(args.bert_feature_dim*2, args.class_num)
         self.feature_linear = torch.nn.Linear(args.bert_feature_dim*2 + args.class_num*3, args.bert_feature_dim*2)
